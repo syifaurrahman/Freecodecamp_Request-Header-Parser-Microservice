@@ -1,0 +1,479 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Request Header Parser Microservice</title>
+  <meta name="description" content="A microservice API that parses your request headers and returns your IP address, language, and browser software." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0b0d14;
+      --surface: #12151f;
+      --card: #181c2a;
+      --border: rgba(255,255,255,0.07);
+      --accent: #6c63ff;
+      --accent2: #00d2ff;
+      --accent3: #a855f7;
+      --text: #e8eaf6;
+      --muted: #7b82a6;
+      --success: #00e5a0;
+      --glow: rgba(108,99,255,0.35);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow-x: hidden;
+    }
+
+    /* Animated gradient background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 10%, rgba(108,99,255,0.18) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 50% at 80% 80%, rgba(168,85,247,0.15) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 50% 50%, rgba(0,210,255,0.08) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 860px;
+      padding: 3rem 1.5rem 4rem;
+    }
+
+    /* Header */
+    header { text-align: center; margin-bottom: 3.5rem; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: rgba(108,99,255,0.15);
+      border: 1px solid rgba(108,99,255,0.35);
+      color: #a09cf7;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 0.35rem 0.9rem;
+      border-radius: 999px;
+      margin-bottom: 1.2rem;
+    }
+    .badge .dot { width: 6px; height: 6px; background: var(--accent); border-radius: 50%; animation: pulse 2s infinite; }
+
+    h1 {
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #fff 0%, #a09cf7 50%, #00d2ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1.15;
+      margin-bottom: 0.8rem;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 1.05rem;
+      font-weight: 400;
+      max-width: 520px;
+      margin: 0 auto;
+      line-height: 1.65;
+    }
+
+    /* API endpoint pill */
+    .endpoint-box {
+      margin: 2rem auto 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.7rem 1.2rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+    }
+    .method { color: #00e5a0; font-weight: 600; font-size: 0.75rem; }
+    .url { color: #a09cf7; }
+
+    /* Try it button */
+    .try-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 2rem;
+      padding: 0.85rem 2rem;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent3) 100%);
+      color: #fff;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 0 0 0 var(--glow);
+      text-decoration: none;
+    }
+    .try-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px var(--glow); }
+    .try-btn:active { transform: translateY(0); }
+    .try-btn svg { width: 16px; height: 16px; }
+
+    /* Result card */
+    #result-section {
+      margin-top: 2.5rem;
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.4s ease, transform 0.4s ease;
+    }
+    #result-section.visible { opacity: 1; transform: translateY(0); }
+
+    .result-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 1.5rem;
+      background: rgba(255,255,255,0.03);
+      border-bottom: 1px solid var(--border);
+    }
+    .card-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+    }
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--success);
+      background: rgba(0,229,160,0.1);
+      border: 1px solid rgba(0,229,160,0.25);
+      border-radius: 999px;
+      padding: 0.2rem 0.65rem;
+    }
+    .status-pill .sdot { width: 6px; height: 6px; background: var(--success); border-radius: 50%; }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0;
+    }
+
+    .info-row {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      align-items: start;
+      padding: 1.1rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      gap: 1rem;
+      transition: background 0.2s;
+    }
+    .info-row:last-child { border-bottom: none; }
+    .info-row:hover { background: rgba(255,255,255,0.025); }
+
+    .info-key {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      padding-top: 0.1rem;
+    }
+    .info-key .icon { font-size: 0.9rem; }
+
+    .info-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.88rem;
+      color: #e2e8f0;
+      word-break: break-all;
+      line-height: 1.55;
+    }
+    .info-val.ip-val { color: #00d2ff; }
+    .info-val.lang-val { color: #a0f7c0; }
+    .info-val.sw-val { color: #c4b5fd; }
+
+    /* Raw JSON toggle */
+    .json-section { padding: 1.2rem 1.5rem; background: rgba(0,0,0,0.25); }
+    .json-toggle {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+      margin-bottom: 0;
+      transition: color 0.2s;
+    }
+    .json-toggle:hover { color: var(--text); }
+    .json-toggle svg { transition: transform 0.25s; }
+    .json-toggle.open svg { transform: rotate(90deg); }
+    .json-raw {
+      display: none;
+      margin-top: 1rem;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.2rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      line-height: 1.7;
+      color: #cdd6f4;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .json-raw.visible { display: block; }
+
+    /* How it works section */
+    .how-section {
+      margin-top: 3.5rem;
+    }
+    .section-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 1.2rem;
+    }
+
+    .cards-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+    }
+
+    .feature-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.4rem;
+      transition: border-color 0.25s, transform 0.25s;
+      position: relative;
+      overflow: hidden;
+    }
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 2px;
+      border-radius: 16px 16px 0 0;
+    }
+    .feature-card.c1::before { background: linear-gradient(90deg, #00d2ff, #6c63ff); }
+    .feature-card.c2::before { background: linear-gradient(90deg, #6c63ff, #a855f7); }
+    .feature-card.c3::before { background: linear-gradient(90deg, #a855f7, #00e5a0); }
+    .feature-card:hover { border-color: rgba(255,255,255,0.15); transform: translateY(-3px); }
+
+    .feat-icon {
+      font-size: 1.6rem;
+      margin-bottom: 0.8rem;
+    }
+    .feat-title { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.35rem; }
+    .feat-desc { font-size: 0.82rem; color: var(--muted); line-height: 1.6; }
+    .feat-key {
+      display: inline-block;
+      margin-top: 0.6rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      background: rgba(108,99,255,0.15);
+      color: #a09cf7;
+      border: 1px solid rgba(108,99,255,0.25);
+      border-radius: 6px;
+      padding: 0.2rem 0.5rem;
+    }
+
+    /* Footer */
+    footer {
+      margin-top: 4rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.8rem;
+      position: relative;
+      z-index: 1;
+      padding-bottom: 2rem;
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* Loading spinner */
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    @media (max-width: 560px) {
+      .info-row { grid-template-columns: 1fr; gap: 0.3rem; }
+      .info-key { font-size: 0.7rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="badge"><span class="dot"></span>freeCodeCamp Project</div>
+      <h1>Request Header<br/>Parser Microservice</h1>
+      <p class="subtitle">
+        A lightweight API microservice that reads your HTTP request headers
+        and returns your IP address, preferred language, and browser software.
+      </p>
+      <div class="endpoint-box">
+        <span class="method">GET</span>
+        <span class="url">/api/whoami</span>
+      </div>
+      <br/>
+      <button class="try-btn" id="try-btn" onclick="fetchHeaders()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+        Try It Now
+      </button>
+    </header>
+
+    <!-- Result section -->
+    <div id="result-section">
+      <div class="result-card">
+        <div class="card-header">
+          <span class="card-title">Response from <code style="font-family:inherit">/api/whoami</code></span>
+          <span class="status-pill" id="status-pill" style="display:none">
+            <span class="sdot"></span>200 OK
+          </span>
+        </div>
+        <div class="info-grid">
+          <div class="info-row">
+            <div class="info-key"><span class="icon">🌐</span> IP Address</div>
+            <div class="info-val ip-val" id="val-ip">—</div>
+          </div>
+          <div class="info-row">
+            <div class="info-key"><span class="icon">🗣️</span> Language</div>
+            <div class="info-val lang-val" id="val-lang">—</div>
+          </div>
+          <div class="info-row">
+            <div class="info-key"><span class="icon">💻</span> Software</div>
+            <div class="info-val sw-val" id="val-sw">—</div>
+          </div>
+        </div>
+        <div class="json-section">
+          <div class="json-toggle" id="json-toggle" onclick="toggleJson()">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+            Raw JSON Response
+          </div>
+          <pre class="json-raw" id="json-raw"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- How it works -->
+    <div class="how-section">
+      <p class="section-label">How It Works</p>
+      <div class="cards-row">
+        <div class="feature-card c1">
+          <div class="feat-icon">🌐</div>
+          <div class="feat-title">IP Address</div>
+          <div class="feat-desc">Extracted from <code>x-forwarded-for</code> header or socket remote address.</div>
+          <span class="feat-key">ipaddress</span>
+        </div>
+        <div class="feature-card c2">
+          <div class="feat-icon">🗣️</div>
+          <div class="feat-title">Language</div>
+          <div class="feat-desc">Read from the <code>Accept-Language</code> header your browser sends automatically.</div>
+          <span class="feat-key">language</span>
+        </div>
+        <div class="feature-card c3">
+          <div class="feat-icon">💻</div>
+          <div class="feat-title">Software</div>
+          <div class="feat-desc">Parsed from the <code>User-Agent</code> header that identifies your browser and OS.</div>
+          <span class="feat-key">software</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Built for <a href="https://www.freecodecamp.org" target="_blank">freeCodeCamp</a> &middot; Request Header Parser Microservice
+  </footer>
+
+  <script>
+    async function fetchHeaders() {
+      const btn = document.getElementById('try-btn');
+      btn.innerHTML = '<span class="spinner"></span> Fetching...';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/whoami');
+        const data = await res.json();
+
+        document.getElementById('val-ip').textContent = data.ipaddress || '—';
+        document.getElementById('val-lang').textContent = data.language || '—';
+        document.getElementById('val-sw').textContent = data.software || '—';
+        document.getElementById('json-raw').textContent = JSON.stringify(data, null, 2);
+        document.getElementById('status-pill').style.display = 'flex';
+
+        const section = document.getElementById('result-section');
+        section.classList.add('visible');
+        section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh`;
+        btn.disabled = false;
+      } catch (err) {
+        btn.innerHTML = '⚠️ Error — Try Again';
+        btn.disabled = false;
+      }
+    }
+
+    function toggleJson() {
+      const toggle = document.getElementById('json-toggle');
+      const raw = document.getElementById('json-raw');
+      toggle.classList.toggle('open');
+      raw.classList.toggle('visible');
+    }
+  </script>
+</body>
+</html>
